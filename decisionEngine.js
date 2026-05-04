@@ -40,13 +40,33 @@ function rain(list, start, end) {
   return false;
 }
 
+function highWind(list, start, end) {
+  for (var i = 0; i < list.length; i++) {
+    var t = new Date(list[i].dt_txt.replace(" ", "T"));
+
+    if (t >= start && t <= end) {
+      var mph = list[i].wind.speed * 2.237; // OpenWeather gives m/s
+      if (mph > 10) return true;
+    }
+  }
+  return false;
+}
+
+function windAtSlot(list, start) {
+  for (var i = 0; i < list.length; i++) {
+    var t = new Date(list[i].dt_txt.replace(" ", "T"));
+    if (t >= start) return Math.round(list[i].wind.speed * 2.237);
+  }
+  return 0;
+}
+
 function nextDry(list, appt) {
   for (var i = 0; i < list.length; i++) {
     var s = new Date(list[i].dt_txt.replace(" ", "T"));
     var e = new Date(s.getTime() + appt.durationMinutes * 60000);
     var a = new Date(e.getTime() + 3 * 60 * 60000);
 
-    if (!rain(list, s, e) && !rain(list, e, a)) {
+    if (!rain(list, s, e) && !rain(list, e, a) && !highWind(list, s, e)) {
       return s.toISOString();
     }
   }
@@ -62,23 +82,29 @@ function check(appt, cb) {
     var end = new Date(start.getTime() + appt.durationMinutes * 60000);
     var after = new Date(end.getTime() + 3 * 60 * 60000);
     var isRain = rain(list, start, end) || rain(list, end, after);
+    var isWind = highWind(list, start, end);
 
     appt.weather = {
       condition: list[0].weather[0].main.toLowerCase(),
-      tempC: list[0].main.temp
+      tempC: list[0].main.temp,
+      windMph: windAtSlot(list, start)
     };
 
     if (appt.serviceType == "INTERIOR") {
       appt.decision = "YES";
       appt.reason = isRain ? "Rain expected, but allowed" : "Allowed";
       appt.suggestedSlot = null;
-    } else if (isRain) {
+    } else if (isRain || isWind) {
       appt.decision = "NO";
-      appt.reason = "Rain expected";
+
+      if (isRain && isWind) appt.reason = "Rain and high wind expected";
+      else if (isRain) appt.reason = "Rain expected";
+      else appt.reason = "High wind expected";
+
       appt.suggestedSlot = nextDry(list, appt);
     } else {
       appt.decision = "YES";
-      appt.reason = "No rain expected";
+      appt.reason = "No rain and wind acceptable";
       appt.suggestedSlot = null;
     }
 

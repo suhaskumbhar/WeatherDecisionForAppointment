@@ -72,7 +72,27 @@ function nextDry(list, appt) {
   }
   return null;
 }
+function cloudImage(item) {
+  var main = item.weather[0].main;
+  var desc = item.weather[0].description.toLowerCase();
+  var clouds = item.clouds ? item.clouds.all : 0;
 
+  if (main == "Thunderstorm") return "Thunderstorm";
+  if (main == "Snow") return "Snow";
+  if (main == "Rain" || main == "Drizzle") return "Rain";
+
+  if (main == "Clear") return "Clear";
+
+  if (clouds >= 70) return "Mostly Cloudy";
+  if (clouds >= 20) return "Partly Cloudy";
+
+  return "Clear";
+}
+
+function windImage(mph) {
+  if (mph > 10) return "High wind";
+  return "Acceptable wind";
+}
 function check(appt, cb) {
   forecast(appt, function (err, data) {
     if (err) return cb(err);
@@ -83,11 +103,23 @@ function check(appt, cb) {
     var after = new Date(end.getTime() + 3 * 60 * 60000);
     var isRain = rain(list, start, end) || rain(list, end, after);
     var isWind = highWind(list, start, end);
+    var windMph = windAtSlot(list, start);
+    var slotWeather = list[0];
+
+    for (var j = 0; j < list.length; j++) {
+      var jt = new Date(list[j].dt_txt.replace(" ", "T"));
+      if (jt >= start) {
+        slotWeather = list[j];
+        break;
+      }
+    }
 
     appt.weather = {
-      condition: list[0].weather[0].main.toLowerCase(),
-      tempC: list[0].main.temp,
-      windMph: windAtSlot(list, start)
+      condition: slotWeather.weather[0].main.toLowerCase(),
+      tempC: slotWeather.main.temp,
+      windMph: windMph,
+      CloudImage: cloudImage(slotWeather),
+      WindImage: windImage(windMph)
     };
 
     if (appt.serviceType == "INTERIOR") {

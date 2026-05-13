@@ -3,7 +3,8 @@ var https = require("https");
 var fs = require("fs");
 var KEY = process.env.OPENWEATHER_API_KEY || fs.readFileSync(".env","utf8").trim().split("=")[1];
 var PORT = process.env.PORT || 3000;
-
+var CACHE = {};
+var CACHE_TTL = 3 * 60 * 60 * 1000; // 3 hours
 function api(url, cb) {
   https.get(url, function (res) {
     var body = "";
@@ -17,17 +18,49 @@ function api(url, cb) {
 }
 
 function forecast(appt, cb) {
-  var zipUrl = "https://api.openweathermap.org/geo/1.0/zip?zip=" +
+
+  // This is caching by postal codes. Changing to weather.
+  // var cached = getCached(appt.postalCode);
+  // if (cached) {
+  //   console.log("Using cached data for " + appt.postalCode);
+  //   return cb(null, cached);
+  // }
+
+    var zipUrl = "https://api.openweathermap.org/geo/1.0/zip?zip=" +
     appt.postalCode + "," + appt.country + "&appid=" + KEY;
+    api(zipUrl, function (err, loc) {
+      if (err) return cb(err);
+      
+      // Below code is caching by grid location instead of postal code, which should be more accurate for weather data.
+      var key = gridKey(loc.lat, loc.lon);
+      if (CACHE[key] && CACHE[key].expiry > Date.now()) { // ✅ CHECK GRID CACHE FIRST
+        console.log("Using cached data for " + appt.postalCode);
+        return cb(null, CACHE[key].data);
+      }
+      
+      var url = "https://api.openweathermap.org/data/2.5/forecast?lat=" +
+        loc.lat + "&lon=" + loc.lon + "&units=metric&appid=" + KEY;
 
-  api(zipUrl, function (err, loc) {
-    if (err) return cb(err);
+      api(url, function (err2, data) {
+        if (err2) return cb(err2);
 
-    var url = "https://api.openweathermap.org/data/2.5/forecast?lat=" +
-      loc.lat + "&lon=" + loc.lon + "&units=metric&appid=" + KEY;
+        // setCache(appt.postalCode, data); 
+        CACHE[key] = {
+          data: data,
+          expiry: Date.now() + 3 * 60 * 60 * 1000
+        };
 
-    api(url, cb);
-  });
+        cb(null, data);
+      });
+    });
+  
+}
+
+function gridKey(lat, lon) {
+  // 1 / 0.02 = 50 -- So we are snapping coordinates to a ~2km grid.
+  var gLat = Math.round(lat * 50) / 50; // ~0.02° grid, about 1.5 miles
+  var gLon = Math.round(lon * 50) / 50;
+  return gLat + "_" + gLon;
 }
 
 function rain(list, start, end) {
@@ -98,6 +131,7 @@ function check(appt, cb) {
     if (err) return cb(err);
 
     var list = data.list;
+    // console.log("Forecast: " + JSON.stringify(list));  
     var start = new Date(appt.dateTime);
     var end = new Date(start.getTime() + appt.durationMinutes * 60000);
     var after = new Date(end.getTime() + 3 * 60 * 60000);
@@ -181,3 +215,20 @@ http.createServer(function (req, res) {
 }).listen(PORT, "0.0.0.0", function () {
   console.log("Running on port " + PORT);
 });
+
+// function getCached(zip) {
+//   var c = CACHE[zip];
+//   if (!c) return null;
+//   if (Date.now() > c.expiry) {
+//     delete CACHE[zip];
+//     return null;
+//   }
+//   return c.data;
+// }
+
+// function setCache(zip, data) {
+//   CACHE[zip] = {
+//     data: data,
+//     expiry: Date.now() + CACHE_TTL
+//   };
+// }

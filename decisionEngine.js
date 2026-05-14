@@ -18,14 +18,6 @@ function api(url, cb) {
 }
 
 function forecast(appt, cb) {
-
-  // This is caching by postal codes. Changing to weather.
-  // var cached = getCached(appt.postalCode);
-  // if (cached) {
-  //   console.log("Using cached data for " + appt.postalCode);
-  //   return cb(null, cached);
-  // }
-
     var zipUrl = "https://api.openweathermap.org/geo/1.0/zip?zip=" +
     appt.postalCode + "," + appt.country + "&appid=" + KEY;
     api(zipUrl, function (err, loc) {
@@ -44,10 +36,9 @@ function forecast(appt, cb) {
       api(url, function (err2, data) {
         if (err2) return cb(err2);
 
-        // setCache(appt.postalCode, data); 
         CACHE[key] = {
           data: data,
-          expiry: Date.now() + 3 * 60 * 60 * 1000
+          expiry: Date.now() + CACHE_TTL
         };
 
         cb(null, data);
@@ -189,46 +180,24 @@ http.createServer(function (req, res) {
 
   req.on("end", function () {
     var arr = JSON.parse(body);
-    var out = [];
-    var i = 0;
 
-    function loop() {
-      if (i >= arr.length) {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        return res.end(JSON.stringify(out, null, 2));
-      }
-
-      check(arr[i], function (err, result) {
-        if (err) {
-          res.writeHead(500);
-          return res.end(String(err));
-        }
-
-        out.push(result);
-        i++;
-        loop();
+    var promises = arr.map(function (appt) {
+      return new Promise(function (resolve, reject) {
+        check(appt, function (err, result) {
+          if (err) return reject(err);
+          resolve(result);
+        });
       });
-    }
+    });
 
-    loop();
+    Promise.all(promises).then(function (out) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify(out, null, 2));
+    }).catch(function (err) {
+      res.writeHead(500);
+      return res.end(String(err));
+    });
   });
 }).listen(PORT, "0.0.0.0", function () {
   console.log("Running on port " + PORT);
 });
-
-// function getCached(zip) {
-//   var c = CACHE[zip];
-//   if (!c) return null;
-//   if (Date.now() > c.expiry) {
-//     delete CACHE[zip];
-//     return null;
-//   }
-//   return c.data;
-// }
-
-// function setCache(zip, data) {
-//   CACHE[zip] = {
-//     data: data,
-//     expiry: Date.now() + CACHE_TTL
-//   };
-// }

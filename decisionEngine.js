@@ -4,7 +4,7 @@ var fs = require("fs");
 var KEY = process.env.OPENWEATHER_API_KEY || fs.readFileSync(".env","utf8").trim().split("=")[1];
 var PORT = process.env.PORT || 3000;
 var CACHE = {};
-var CACHE_TTL = 3 * 60 * 60 * 1000; // 3 hours
+var CACHE_TTL = 2 * 60 * 60 * 1000; // 3 hours
 function api(url, cb) {
   https.get(url, function (res) {
     var body = "";

@@ -18,33 +18,40 @@ function api(url, cb) {
 }
 
 function forecast(appt, cb) {
+  function getWeatherData(lat, lon, postalCode) {
+    // Cache with postal code if lat-lon was not provided. Third param is optional and only used for caching when lat/lon not provided.
+    var key = postalCode || gridKey(lat, lon);
+    if (CACHE[key] && CACHE[key].expiry > Date.now()) { // ✅ CHECK GRID CACHE FIRST
+      console.log(`Using cached data for ${key}`);
+      return cb(null, CACHE[key].data);
+    }
+    
+    var url = "https://api.openweathermap.org/data/2.5/forecast?lat=" +
+      lat + "&lon=" + lon + "&units=metric&appid=" + KEY;
+
+    api(url, function (err, data) {
+      if (err) return cb(err);
+
+      CACHE[key] = {
+        data: data,
+        expiry: Date.now() + CACHE_TTL
+      };
+
+      cb(null, data);
+    });
+  }
+
+  if (appt.lat && appt.lon) {
+    console.log(`Skipping geocoding for ${appt.postalCode || `${appt.lat},${appt.lon}`}`);
+    getWeatherData(appt.lat, appt.lon); // Not passing postal code intentionally.
+  } else {
     var zipUrl = "https://api.openweathermap.org/geo/1.0/zip?zip=" +
-    appt.postalCode + "," + appt.country + "&appid=" + KEY;
+      appt.postalCode + "," + appt.country + "&appid=" + KEY;
     api(zipUrl, function (err, loc) {
       if (err) return cb(err);
-      
-      // Below code is caching by grid location instead of postal code, which should be more accurate for weather data.
-      var key = gridKey(loc.lat, loc.lon);
-      if (CACHE[key] && CACHE[key].expiry > Date.now()) { // ✅ CHECK GRID CACHE FIRST
-        console.log("Using cached data for " + appt.postalCode);
-        return cb(null, CACHE[key].data);
-      }
-      
-      var url = "https://api.openweathermap.org/data/2.5/forecast?lat=" +
-        loc.lat + "&lon=" + loc.lon + "&units=metric&appid=" + KEY;
-
-      api(url, function (err2, data) {
-        if (err2) return cb(err2);
-
-        CACHE[key] = {
-          data: data,
-          expiry: Date.now() + CACHE_TTL
-        };
-
-        cb(null, data);
-      });
+      getWeatherData(loc.lat, loc.lon, appt.postalCode);
     });
-  
+  }
 }
 
 function gridKey(lat, lon) {
